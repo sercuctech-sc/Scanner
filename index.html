@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Auto OCR Scanner + Auto Taglio + Salvataggio</title>
+  <style>
+    :root { color-scheme: dark; }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0b0b0f;color:#fff}
+    header{position:fixed;left:0;right:0;top:0;padding:12px 12px 10px;background:linear-gradient(to bottom, rgba(0,0,0,.88), rgba(0,0,0,0));z-index:10}
+    .title{font-weight:800;font-size:16px;margin:0 0 6px}
+    .status{opacity:.85;font-size:13px;line-height:1.25}
+    .wrap{padding-top:74px;padding-bottom:290px;display:grid;place-items:center}
+    .stage{position:relative;width:min(96vw,560px);aspect-ratio:3/4;border-radius:18px;overflow:hidden;
+      box-shadow:0 10px 40px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)}
+    video{width:100%;height:100%;object-fit:cover;background:#000}
+    .overlay{position:absolute;inset:0;pointer-events:none;background:
+      radial-gradient(circle at center, rgba(0,0,0,0) 0 48%, rgba(0,0,0,.48) 68% 100%),
+      linear-gradient(to bottom, rgba(0,0,0,.16), rgba(0,0,0,.05));
+    }
+    .frame{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      width:78%;height:72%;
+      border:2px solid rgba(255,255,255,.85);
+      border-radius:16px;opacity:.95
+    }
+    .hint{
+      position:absolute;left:50%;top:14px;transform:translate(-50%,0);
+      font-size:12px;opacity:.9;background:rgba(0,0,0,.45);
+      padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12)
+    }
+    footer{position:fixed;left:0;right:0;bottom:0;padding:10px 12px 14px;background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,0));z-index:10}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    button{
+      padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.08);color:#fff;font-weight:800
+    }
+    button.primary{background:#fff;color:#000;border-color:#fff}
+    button.danger{background:rgba(255,80,80,.18);border-color:rgba(255,80,80,.35)}
+    button:disabled{opacity:.5}
+    .small{opacity:.78;font-size:12px;line-height:1.25;margin-top:8px}
+    .panel{
+      margin-top:10px;max-width:min(96vw,560px);
+      background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+      border-radius:14px;padding:10px
+    }
+    textarea{
+      width:100%;min-height:140px;max-height:34vh;resize:vertical;
+      border-radius:12px;border:1px solid rgba(255,255,255,.15);
+      background:rgba(0,0,0,.25);color:#fff;padding:10px;font-size:13px;line-height:1.35
+    }
+    .pill{display:inline-block;margin:6px 8px 0 0;padding:6px 10px;border-radius:999px;
+      background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);font-size:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+    .banner{
+      margin-top:10px;max-width:min(96vw,560px);
+      background:rgba(0,160,255,.12);border:1px solid rgba(0,160,255,.30);
+      border-radius:14px;padding:10px
+    }
+    label.pill{cursor:pointer; user-select:none; display:inline-flex; align-items:center; gap:8px;}
+    input[type="checkbox"]{accent-color:#fff;}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Auto OCR Scanner + Auto Taglio + Download</div>
+    <div id="status" class="status">Tocca “Avvia fotocamera”</div>
+  </header>
+
+  <div class="wrap">
+    <div>
+      <div class="stage">
+        <video id="video" playsinline muted></video>
+        <div class="overlay"></div>
+        <div class="frame"></div>
+        <div class="hint">Inquadra dentro la cornice — quando è fermo, taglio + OCR + salvataggio</div>
+      </div>
+
+      <div class="banner">
+        <div><b>Nota cartelle:</b> una pagina web non può mostrare la lista completa di tutte le cartelle del telefono. Se Chrome lo supporta, puoi usare “Scegli cartella” (con possibilità di creare cartella). Altrimenti i file vanno in <b>Download</b>.</div>
+        <div id="fsInfo" class="small"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <button id="btnStart" class="primary">📷 Avvia fotocamera</button>
+          <button id="btnPickDir">📁 Scegli cartella salvataggio</button>
+
+          <label class="pill">
+            <input id="askEveryTime" type="checkbox" />
+            Chiedi cartella ogni scansione
+          </label>
+
+          <button id="btnPause">⏸︎ Pausa OCR</button>
+          <button id="btnCopy">📋 Copia testo</button>
+          <button id="btnExportTxt">⬇️ Esporta TXT</button>
+          <button id="btnClear" class="danger">🗑️ Svuota</button>
+        </div>
+
+        <div id="info" class="small"></div>
+        <div id="pages" class="small"></div>
+
+        <textarea id="text" placeholder="Qui comparirà il testo OCR…"></textarea>
+
+        <div class="small">
+          Se vedi <b>NotAllowedError</b>, significa che la camera è bloccata: apri la pagina da <b>HTTPS</b> (es. GitHub Pages) e concedi permessi a Chrome.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<script>
+(() => {
+  const video = document.getElementById('video');
+  const statusEl = document.getElementById('status');
+  const infoEl   = document.getElementById('info');
+  const pagesEl  = document.getElementById('pages');
+  const textEl   = document.getElementById('text');
+  const fsInfoEl = document.getElementById('fsInfo');
+
+  const btnStart   = document.getElementById('btnStart');
+  const btnPickDir = document.getElementById('btnPickDir');
+  const btnPause   = document.getElementById('btnPause');
+  const btnCopy    = document.getElementById('btnCopy');
+  const btnExportTxt = document.getElementById('btnExportTxt');
+  const btnClear   = document.getElementById('btnClear');
+  const askEveryTimeEl = document.getElementById('askEveryTime');
+
+  // ---- Config ----
+  const OCR_LANG = 'ita+eng';
+
+  const CROP_W   = 0.78;
+  const CROP_H   = 0.72;
+
+  const STILL_THRESHOLD = 8.0;
+  const STILL_FRAMES_REQUIRED = 14;
+  const OCR_COOLDOWN_MS = 6500;
+  const MAX_PAGES = 50;
+
+  const TRIM_SAMPLE_STEP = 2;
+  const TRIM_WHITE_LUMA = 235;
+  const TRIM_ROW_DARK_RATIO = 0.012;
+  const TRIM_PADDING = 8;
+
+  const CONTRAST = 1.25;
+
+  // Download automatico
+  const AUTO_DOWNLOAD_IMAGES = true; // salva ORIG e TAGLIO
+  const AUTO_DOWNLOAD_TEXT   = false; // se vuoi un .txt per ogni pagina, metti true
+
+  // ---- State ----
+  let stream = null;
+  let track = null;
+  let worker = null;
+
+  let ocrPaused = false;
+  let ocrBusy = false;
+  let lastOcrAt = 0;
+  let stillFrames = 0;
+  let lastFrameSmall = null;
+
+  let pages = []; // {ts, text, baseName}
+  let directoryHandle = null; // File System Access API (se supportata)
+
+  const cFull = document.createElement('canvas');
+  const cxFull = cFull.getContext('2d', { willReadFrequently: true });
+
+  const cSmall = document.createElement('canvas');
+  const cxSmall = cSmall.getContext('2d', { willReadFrequently: true });
+
+  function setStatus(msg){ statusEl.textContent = msg; }
+  function nowTime(){ return new Date().toLocaleString('it-IT'); }
+
+  function safeBaseName() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    const idx = String(pages.length + 1).padStart(3,'0');
+    return `scan_${idx}_${stamp}`;
+  }
+
+  function fsSupportText(){
+    const ok = ('showDirectoryPicker' in window);
+    return ok
+      ? '✅ Questo browser può scegliere una cartella (se concedi permesso).'
+      : 'ℹ️ Questo browser NON può scegliere cartelle: i file andranno in Download.';
+  }
+
+  function updatePagesUI(){
+    pagesEl.innerHTML = pages.length
+      ? pages.map((p,i)=>`<span class="pill mono">Pag ${i+1} · ${p.ts}</span>`).join('')
+      : '<span class="pill">Nessuna pagina ancora</span>';
+  }
+
+  function appendText(pageText){
+    const block = (pageText || '').trim();
+    if (!block) return;
+    const header = `\n\n===== PAGINA ${pages.length} · ${pages[pages.length-1].ts} =====\n`;
+    textEl.value = (textEl.value || '').replace(/\s+$/,'') + header + block + "\n";
+    textEl.scrollTop = textEl.scrollHeight;
+  }
+
+  async function applyAutoFocusIfPossible(){
+    try{
+      const caps = track?.getCapabilities ? track.getCapabilities() : {};
+      const settings = track?.getSettings ? track.getSettings() : {};
+      const lines = [];
+      lines.push(`Camera: ${settings.facingMode || 'n/d'} · ${Math.round(settings.width||0)}x${Math.round(settings.height||0)}`);
+      if (caps.focusMode) lines.push(`focus: ${caps.focusMode.join(', ')}`);
+      infoEl.textContent = lines.join(' | ');
+
+      const adv = [];
+      if (caps.focusMode?.includes('continuous')) adv.push({ focusMode: 'continuous' });
+      else if (caps.focusMode?.includes('auto')) adv.push({ focusMode: 'auto' });
+
+      if (adv.length) await track.applyConstraints({ advanced: adv });
+    } catch(e) {}
+  }
+
+  async function initOCRWorker(){
+    worker = await Tesseract.createWorker(OCR_LANG, 1, {
+      logger: m => {
+        if (m?.status === 'recognizing text') {
+          setStatus(`OCR… ${Math.round((m.progress||0)*100)}%`);
+        }
+      }
+    });
+    try{ await worker.setParameters({ tessedit_pageseg_mode: '6' }); } catch(e){}
+  }
+
+  async function startCamera(){
+    if (stream) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('Errore: browser non supporta la camera.');
+      return;
+    }
+    try{
+      setStatus('Richiedo accesso alla camera… (Consenti)');
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{
+          facingMode:{ ideal:'environment' },
+          width:{ ideal:1280 },
+          height:{ ideal:720 }
+        }
+      });
+
+      video.srcObject = stream;
+      await new Promise(res => video.onloadedmetadata = res);
+      await video.play();
+
+      track = stream.getVideoTracks()[0];
+      await applyAutoFocusIfPossible();
+
+      if (!worker) {
+        setStatus('Carico OCR…');
+        await initOCRWorker();
+      }
+
+      btnStart.disabled = true;
+      setStatus('Pronto ✅ Inquadra testo (auto taglio + OCR + salvataggio)');
+      requestAnimationFrame(loop);
+    } catch(err){
+      const name = err?.name || 'Errore';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setStatus('Camera BLOCCATA: apri da HTTPS (GitHub Pages) e consenti la camera.');
+      } else {
+        setStatus('Errore camera: ' + name);
+      }
+      stream = null;
+    }
+  }
+
+  function getCropRect(w,h){
+    const cw = Math.round(w * CROP_W);
+    const ch = Math.round(h * CROP_H);
+    const x = Math.round((w - cw) / 2);
+    const y = Math.round((h - ch) / 2);
+    return {x,y,cw,ch};
+  }
+
+  function motionScore(){
+    const sw = 160, sh = 120;
+    cSmall.width = sw; cSmall.height = sh;
+    cxSmall.drawImage(video, 0, 0, sw, sh);
+    const cur = cxSmall.getImageData(0,0,sw,sh);
+
+    if (!lastFrameSmall) { lastFrameSmall = cur; return 999; }
+
+    let sum = 0;
+    const a = cur.data, b = lastFrameSmall.data;
+    for (let i=0; i<a.length; i+=4) sum += Math.abs(a[i] - b[i]);
+    const avg = sum / (a.length/4);
+    lastFrameSmall = cur;
+    return avg;
+  }
+
+  function preprocessToGrayContrast(canvas){
+    const w = canvas.width, h = canvas.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently:true });
+    const img = ctx.getImageData(0,0,w,h);
+    const d = img.data;
+    for (let i=0; i<d.length; i+=4) {
+      const r=d[i], g=d[i+1], b=d[i+2];
+      let v = (0.299*r + 0.587*g + 0.114*b);
+      v = (v - 128) * CONTRAST + 128;
+      v = Math.max(0, Math.min(255, v));
+      d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(img,0,0);
+    return canvas;
+  }
+
+  function autoTrimCanvas(srcCanvas){
+    const w = srcCanvas.width, h = srcCanvas.height;
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently:true });
+    const img = ctx.getImageData(0,0,w,h);
+    const d = img.data;
+
+    const step = TRIM_SAMPLE_STEP;
+
+    const isDark = (i) => {
+      const r=d[i], g=d[i+1], b=d[i+2];
+      const l = (0.299*r + 0.587*g + 0.114*b);
+      return l < TRIM_WHITE_LUMA;
+    };
+
+    const rowHasContent = (y) => {
+      let dark=0,total=0;
+      const y0 = y*w*4;
+      for (let x=0; x<w; x+=step){
+        const i = y0 + x*4;
+        if (isDark(i)) dark++;
+        total++;
+      }
+      return (dark/total) > TRIM_ROW_DARK_RATIO;
+    };
+
+    const colHasContent = (x) => {
+      let dark=0,total=0;
+      for (let y=0; y<h; y+=step){
+        const i = (y*w + x)*4;
+        if (isDark(i)) dark++;
+        total++;
+      }
+      return (dark/total) > TRIM_ROW_DARK_RATIO;
+    };
+
+    let top=0; while (top < h-1 && !rowHasContent(top)) top++;
+    let bottom=h-1; while (bottom > 0 && !rowHasContent(bottom)) bottom--;
+    let left=0; while (left < w-1 && !colHasContent(left)) left++;
+    let right=w-1; while (right > 0 && !colHasContent(right)) right--;
+
+    if (right <= left || bottom <= top) return srcCanvas;
+
+    top = Math.max(0, top - TRIM_PADDING);
+    left = Math.max(0, left - TRIM_PADDING);
+    bottom = Math.min(h-1, bottom + TRIM_PADDING);
+    right = Math.min(w-1, right + TRIM_PADDING);
+
+    const tw = right - left + 1;
+    const th = bottom - top + 1;
+
+    const out = document.createElement('canvas');
+    out.width = tw; out.height = th;
+    out.getContext('2d').drawImage(srcCanvas, left, top, tw, th, 0, 0, tw, th);
+    return out;
+  }
+
+  // ---------- SALVATAGGIO FILE ----------
+  function canvasToBlob(canvas, quality=0.92){
+    return new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', quality));
+  }
+
+  async function saveToPickedFolderOrDownload(blob, filename){
+    // 1) se ho una cartella scelta -> salva lì
+    if (directoryHandle) {
+      try{
+        const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+      } catch(e) {
+        // fallback a download
+      }
+    }
+    // 2) fallback: download classico (va in Download)
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+    return false;
+  }
+
+  async function pickDirectory(force = false){
+    if (!('showDirectoryPicker' in window)) {
+      setStatus('Il tuo browser non può scegliere cartelle: salvo in Download.');
+      return null;
+    }
+    try{
+      if (!force && directoryHandle) return directoryHandle;
+      directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      setStatus('Cartella scelta ✅ (nel selettore puoi anche creare una nuova cartella)');
+      return directoryHandle;
+    } catch(e){
+      setStatus('Scelta cartella annullata.');
+      return null;
+    }
+  }
+
+  async function saveScanFiles(baseName, origCanvas, trimmedCanvas, pageText){
+    const forcePicker = !!askEveryTimeEl?.checked;
+    if (forcePicker) await pickDirectory(true);
+
+    if (AUTO_DOWNLOAD_IMAGES) {
+      const origBlob = await canvasToBlob(origCanvas, 0.92);
+      const trimBlob = await canvasToBlob(trimmedCanvas, 0.92);
+      await saveToPickedFolderOrDownload(origBlob, `${baseName}_ORIG.jpg`);
+      await saveToPickedFolderOrDownload(trimBlob, `${baseName}_TAGLIO.jpg`);
+    }
+
+    if (AUTO_DOWNLOAD_TEXT) {
+      const txt = new Blob([pageText || ''], { type:'text/plain;charset=utf-8' });
+      await saveToPickedFolderOrDownload(txt, `${baseName}.txt`);
+    }
+  }
+
+  // ---------- OCR ----------
+  async function runOCR(){
+    if (!worker || ocrBusy || ocrPaused) return;
+    const t = Date.now();
+    if (t - lastOcrAt < OCR_COOLDOWN_MS) return;
+    if (pages.length >= MAX_PAGES) { setStatus('Limite pagine raggiunto.'); return; }
+
+    ocrBusy = true;
+    lastOcrAt = t;
+
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) { ocrBusy=false; return; }
+
+    // frame completo
+    cFull.width = vw; cFull.height = vh;
+    cxFull.drawImage(video, 0, 0, vw, vh);
+
+    // crop centrale (cornice)
+    const {x,y,cw,ch} = getCropRect(vw,vh);
+    const cCrop = document.createElement('canvas');
+    cCrop.width = cw; cCrop.height = ch;
+    cCrop.getContext('2d', { willReadFrequently:true })
+      .drawImage(cFull, x,y,cw,ch, 0,0,cw,ch);
+
+    // ORIGINALE (prima di preprocess/trim)
+    const cOrig = document.createElement('canvas');
+    cOrig.width = cw; cOrig.height = ch;
+    cOrig.getContext('2d').drawImage(cCrop, 0, 0);
+
+    // preprocess + trim
+    preprocessToGrayContrast(cCrop);
+    setStatus('Taglio automatico…');
+    const cTrimmed = autoTrimCanvas(cCrop);
+
+    // OCR
+    setStatus('OCR… 0%');
+    try{
+      const res = await worker.recognize(cTrimmed);
+      const raw = (res?.data?.text || '').trim();
+      const cleaned = raw
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+
+      const baseName = safeBaseName();
+      pages.push({ ts: nowTime(), text: cleaned, baseName });
+      updatePagesUI();
+      if (cleaned) appendText(cleaned);
+
+      // Salvataggio automatico (file)
+      await saveScanFiles(baseName, cOrig, cTrimmed, cleaned);
+
+      setStatus(cleaned ? 'OCR completato ✅ (file salvati)' : 'OCR completato (testo non trovato: più luce/avvicina)');
+    } catch(err){
+      setStatus('Errore OCR: ' + (err?.message || err));
+    } finally {
+      ocrBusy = false;
+      stillFrames = 0;
+    }
+  }
+
+  function loop(){
+    if (!stream || video.readyState < 2) { requestAnimationFrame(loop); return; }
+    const m = motionScore();
+    stillFrames = (m < STILL_THRESHOLD) ? (stillFrames+1) : 0;
+    if (!ocrPaused && !ocrBusy && stillFrames >= STILL_FRAMES_REQUIRED) runOCR();
+    if (!ocrBusy) {
+      const hint = ocrPaused ? 'PAUSA' : `fermo:${stillFrames}/${STILL_FRAMES_REQUIRED} · mov:${m.toFixed(1)}`;
+      setStatus(`Pronto · ${hint}`);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- UI ----------
+  btnStart.addEventListener('click', startCamera);
+  btnPickDir.addEventListener('click', () => pickDirectory(true));
+
+  btnPause.addEventListener('click', () => {
+    ocrPaused = !ocrPaused;
+    btnPause.textContent = ocrPaused ? '▶︎ Riprendi OCR' : '⏸︎ Pausa OCR';
+    setStatus(ocrPaused ? 'OCR in pausa' : 'OCR attivo (automatico quando fermo)');
+  });
+
+  btnCopy.addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(textEl.value || '');
+      setStatus('Copiato negli appunti ✅');
+    }catch(e){
+      textEl.focus(); textEl.select();
+      setStatus('Selezionato: premi “Copia” dal menu del telefono');
+    }
+  });
+
+  btnExportTxt.addEventListener('click', async () => {
+    const content = textEl.value || '';
+    const blob = new Blob([content], { type:'text/plain;charset=utf-8' });
+    await saveToPickedFolderOrDownload(blob, `OCR_TUTTO_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.txt`);
+    setStatus('TXT esportato ✅');
+  });
+
+  btnClear.addEventListener('click', () => {
+    pages = [];
+    textEl.value = '';
+    updatePagesUI();
+    setStatus('Svuotato ✅');
+  });
+
+  // init
+  updatePagesUI();
+  fsInfoEl.textContent = fsSupportText();
+  setStatus('Tocca “Avvia fotocamera”. (Opzionale: “Scegli cartella”)');
+})();
+</script>
+</body>
+</html>
